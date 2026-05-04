@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.logging import configure_logging, get_logger
-from api.routes import health, identify, turtles
+from api.routes import health, identify, photos, sightings, turtles
 
 configure_logging()
 log = get_logger("api")
@@ -34,3 +34,5 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(identify.router)
 app.include_router(turtles.router)
+app.include_router(photos.router)
+app.include_router(sightings.router)

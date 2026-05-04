@@ -13,9 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agents.feature_extraction_agent import FeatureExtractionAgent
 from agents.orchestrator_agent import OrchestratorAgent
 from agents.preprocessing_agent import ImagePreprocessingAgent
+from agents.profile_management_agent import ProfileManagementAgent
+from agents.sighting_tracker_agent import SightingTrackerAgent
 from agents.similarity_search_agent import SimilaritySearchAgent
 from core.database import get_session
 from repositories.photo_repository import PhotoRepository
+from repositories.sighting_repository import SightingRepository
 from repositories.turtle_repository import TurtleRepository
 
 
@@ -37,6 +40,10 @@ def turtle_repo(session: AsyncSession = Depends(get_session)) -> TurtleRepositor
     return TurtleRepository(session)
 
 
+def sighting_repo(session: AsyncSession = Depends(get_session)) -> SightingRepository:
+    return SightingRepository(session)
+
+
 def similarity_search_agent(
     photos: PhotoRepository = Depends(photo_repo),
     turtles: TurtleRepository = Depends(turtle_repo),
@@ -52,3 +59,22 @@ def orchestrator(
         feature_extraction=feature_extraction_agent(),
         similarity_search=similarity,
     )
+
+
+def profile_agent(
+    turtles: TurtleRepository = Depends(turtle_repo),
+    photos: PhotoRepository = Depends(photo_repo),
+) -> ProfileManagementAgent:
+    return ProfileManagementAgent(
+        turtle_repo=turtles,
+        photo_repo=photos,
+        preprocessing=preprocessing_agent(),
+        feature_extraction=feature_extraction_agent(),
+    )
+
+
+def sighting_agent(
+    sightings: SightingRepository = Depends(sighting_repo),
+    turtles: TurtleRepository = Depends(turtle_repo),
+) -> SightingTrackerAgent:
+    return SightingTrackerAgent(sighting_repo=sightings, turtle_repo=turtles)

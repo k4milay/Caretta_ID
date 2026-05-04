@@ -38,6 +38,27 @@ class SightingRead(BaseModel):
     location_name: str | None
 
 
+class TurtleUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    notes: str | None = None
+
+
+class PhotoRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    turtle_id: UUID | None
+    file_path: str
+    uploaded_at: datetime
+
+
+class SightingBody(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    location_name: str | None = None
+    photo_id: UUID | None = None
+
+
 class MatchResult(BaseModel):
     turtle_id: UUID
     name: str

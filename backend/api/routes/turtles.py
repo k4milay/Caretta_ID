@@ -3,16 +3,41 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from core.dependencies import turtle_repo
-from models.schemas import TurtleCreate, TurtleRead
+from agents.profile_management_agent import (
+    ProfileManagementAgent,
+    RegisterTurtleAction,
+    UpdateTurtleAction,
+)
+from core.dependencies import profile_agent, turtle_repo
+from models.schemas import TurtleCreate, TurtleRead, TurtleUpdate
 from repositories.turtle_repository import TurtleRepository
 
 router = APIRouter(prefix="/turtles", tags=["turtles"])
 
 
 @router.post("", response_model=TurtleRead, status_code=status.HTTP_201_CREATED)
-async def create_turtle(body: TurtleCreate, repo: TurtleRepository = Depends(turtle_repo)):
-    return await repo.create(name=body.name, notes=body.notes)
+async def create_turtle(
+    body: TurtleCreate,
+    agent: ProfileManagementAgent = Depends(profile_agent),
+) -> TurtleRead:
+    result = await agent.run(RegisterTurtleAction(name=body.name, notes=body.notes))
+    if not result.ok:
+        raise HTTPException(status_code=422, detail=result.error)
+    return TurtleRead.model_validate(result.value.turtle)
+
+
+@router.patch("/{turtle_id}", response_model=TurtleRead)
+async def update_turtle(
+    turtle_id: UUID,
+    body: TurtleUpdate,
+    agent: ProfileManagementAgent = Depends(profile_agent),
+) -> TurtleRead:
+    result = await agent.run(
+        UpdateTurtleAction(turtle_id=turtle_id, name=body.name, notes=body.notes)
+    )
+    if not result.ok:
+        raise HTTPException(status_code=422, detail=result.error)
+    return TurtleRead.model_validate(result.value.turtle)
 
 
 @router.get("", response_model=list[TurtleRead])

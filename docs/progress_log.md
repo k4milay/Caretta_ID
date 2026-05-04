@@ -1,5 +1,35 @@
 # CarettaID — Progress Log
 
+## 2026-05-04 Phase 4 — Profile & Tracking
+
+**Decision:** Implemented `ProfileManagementAgent` and `SightingTrackerAgent` with full CRUD, photo-to-embedding pipeline, and GeoJSON route generation.
+
+**What was built:**
+- `agents/profile_management_agent.py` — discriminated-union action dispatch (`RegisterTurtleAction`, `UpdateTurtleAction`, `DeleteTurtleAction`, `AddPhotoAction`). `AddPhotoAction` runs the full Preprocessing → FeatureExtraction pipeline before persisting the photo and its embedding, keeping the vector index automatically in sync. Files saved to `uploads/<turtle_id>/<uuid>.jpg`.
+- `agents/sighting_tracker_agent.py` — three actions: `LogSightingAction` (write to DB), `GetRouteAction` (GeoJSON FeatureCollection: one `Point` per sighting + `LineString` when ≥2 sightings), `ListSightingsAction` (chronological DB read). GeoJSON coordinates follow RFC 7946 `[longitude, latitude]` order.
+- `repositories/sighting_repository.py` — `create`, `list_for_turtle` (ordered by `sighted_at`), `get_by_id`.
+- `core/dependencies.py` — added `sighting_repo`, `profile_agent`, `sighting_agent` dependency providers.
+- `api/routes/photos.py` — `POST /turtles/{id}/photos` (multipart upload, triggers embed pipeline).
+- `api/routes/sightings.py` — `POST /turtles/{id}/sightings`, `GET /turtles/{id}/sightings`, `GET /turtles/{id}/route` (GeoJSON).
+- `api/routes/turtles.py` — `POST /turtles` now routes through `ProfileManagementAgent`; added `PATCH /turtles/{id}` for name/notes updates. `TurtleUpdate` schema added.
+- git repository initialised; Phases 1–3 committed as separate semantic commits.
+
+**Why:**
+- Discriminated union (`kind` literal field) keeps the agent's `_execute` readable as a simple `isinstance` dispatch without a method registry. Each sub-action is a small, self-describing dataclass.
+- `AddPhotoAction` deliberately embeds synchronously in the request cycle: it makes the photo immediately searchable with no background job infrastructure. For high-throughput production this would move to a task queue, but that's premature at this scale.
+- GeoJSON `LineString` is only emitted for ≥2 sightings — a single point has no meaningful route.
+- `monkeypatch.setattr(mod, "_UPLOAD_DIR", tmp_path)` in tests avoids `importlib.reload` which invalidates class identities and breaks `isinstance` checks in subsequent tests.
+
+**Accuracy metrics:** N/A (profile/tracking phase).
+
+**Tests:** 40/40 passing (all Phases 1–4, fully offline).
+
+**Next (Phase 5):**
+- React + TypeScript + Vite frontend.
+- Photo upload & identification UI.
+- Turtle profile pages with multiple photos and Leaflet route map.
+- Add new turtle workflow + search/browse registered turtles.
+
 ## 2026-05-04 Phase 3 — Identification System
 
 **Decision:** Implemented the full identification pipeline end-to-end: SimilaritySearchAgent → OrchestratorAgent → `/identify` HTTP endpoint.
