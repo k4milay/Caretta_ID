@@ -12,7 +12,11 @@ from core.dependencies import profile_agent, turtle_repo
 from models.schemas import TurtleCreate, TurtleRead, TurtleUpdate
 from repositories.turtle_repository import TurtleRepository
 
-router = APIRouter(prefix="/turtles", tags=["turtles"])
+router = APIRouter(
+    prefix="/turtles",
+    tags=["turtles"],
+    responses={404: {"description": "Kaplumbağa bulunamadı"}},
+)
 
 
 @router.post("", response_model=TurtleRead, status_code=status.HTTP_201_CREATED)

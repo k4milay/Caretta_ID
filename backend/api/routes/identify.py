@@ -10,7 +10,17 @@ router = APIRouter(prefix="/identify", tags=["identification"])
 _MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 
-@router.post("", response_model=IdentificationResponse, status_code=status.HTTP_200_OK)
+@router.post(
+    "",
+    response_model=IdentificationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Kaplumbağayı Tanımla",
+    description=(
+        "Bir kaplumbağa fotoğrafı yükleyin. Sistem baş bölgesini segmente eder, "
+        "512 boyutlu bir gömme vektörü oluşturur ve pgvector HNSW indeksinde "
+        "kosinüs benzerliği araması yapar. Eşik altındaki sonuçlar filtrelenir."
+    ),
+)
 async def identify_turtle(
     file: UploadFile,
     region: str = Query(default="head", description="Anatomical region: 'head' or 'carapace'"),

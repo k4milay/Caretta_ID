@@ -49,7 +49,15 @@ async def list_sightings(
     return [SightingRead.model_validate(s) for s in result.value.sightings]
 
 
-@router.get("/route")
+@router.get(
+    "/route",
+    summary="GeoJSON Rota Verisi",
+    description=(
+        "Kaplumbağanın tüm gözlemlerini RFC 7946 uyumlu GeoJSON FeatureCollection "
+        "olarak döndürür: her gözlem için bir Point özelliği ve ≥2 gözlem "
+        "varsa koordinatları birleştiren bir LineString özelliği."
+    ),
+)
 async def get_route(
     turtle_id: UUID,
     agent: SightingTrackerAgent = Depends(sighting_agent),

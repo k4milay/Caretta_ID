@@ -12,7 +12,18 @@ router = APIRouter(prefix="/turtles/{turtle_id}/photos", tags=["photos"])
 _MAX_BYTES = 20 * 1024 * 1024
 
 
-@router.post("", response_model=PhotoRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=PhotoRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Fotoğraf Yükle ve Gömme Vektörü Oluştur",
+    description=(
+        "Kaplumbağa profiline fotoğraf ekler. Yükleme tamamlandığında "
+        "görüntü otomatik olarak ön işlemden geçirilir ve pgvector HNSW "
+        "indeksindeki gömme vektörü güncellenir. Böylece yeni fotoğraf "
+        "anında tanımlama araması kapsamına girer."
+    ),
+)
 async def add_photo(
     turtle_id: UUID,
     file: UploadFile,

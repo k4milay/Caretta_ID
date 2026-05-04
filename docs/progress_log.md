@@ -1,5 +1,43 @@
 # CarettaID — Progress Log
 
+## 2026-05-04 Phase 6 — Kalite ve Dokümantasyon
+
+**Karar:** Kapsamı %81'den %92'ye çıkardı, 39 yeni test ekledi (toplam 79), tam HTTP boru hattı entegrasyon testleri yazdı, OpenAPI dokümantasyonunu Türkçe zenginleştirdi.
+
+**Neler yapıldı:**
+
+**Test Kapsamı:**
+- `pytest-cov` entegrasyonu; kapsam hedefi: her iş mantığı modülü ≥%80.
+- `tests/test_repositories.py` (16 test): `TurtleRepository`, `PhotoRepository`, `SightingRepository` AsyncMock ile tamamen izole edilmiş birim testleri — gerçek Postgres bağlantısı yok.
+- `tests/test_agent_branches.py` (14 test): Önceki testlerin atladığı dalları kapsar: `UpdateTurtleAction`, bilinmeyen eylem `TypeError`, maskesiz `turtle_id` eşleşme, bozuk JPEG, `Container` register/resolve/singleton mantığı.
+- `tests/test_integration.py` (14 test): Tam HTTP boru hattı `TestClient` + `dependency_overrides` ile. Yönlendirme, serileştirme, hata yayılımı, ajan bağlama uçtan uca test edildi.
+- **Kritik düzeltme:** `lru_cache` singleton ajanları (`preprocessing_agent`, `feature_extraction_agent`) `dependency_overrides` ile geçersiz kılınamaz çünkü `orchestrator` ve `profile_agent` fabrikaları onları doğrudan çağırır. Çözüm: `orchestrator` ve `profile_agent` fabrikalrının kendisini geçersiz kılarak sahte bağımlılıkları doğrudan enjekte etmek.
+
+**Kapsam sonuçları:**
+
+| Modül | Önceki | Sonraki |
+|-------|--------|---------|
+| `turtle_repository` | %42 | %100 |
+| `sighting_repository` | %50 | %100 |
+| `photo_repository` | %59 | %100 |
+| `profile_management_agent` | %87 | %99 |
+| `core/container` | %0 | %95 |
+| **TOPLAM** | **%81** | **%92** |
+
+Not: `services/embedding_model.py` (%29) kasıtlı olarak düşük — PyTorch CI'da kurulu değil, bu yüzden yalnızca importun kendisi test ediliyor.
+
+**OpenAPI Zenginleştirme:**
+- `api/main.py`: Türkçe açıklama, kimlik tespiti boru hattını belgeleyen `_DESCRIPTION` bloğu, etiket meta verileri (`_TAGS`), iletişim + lisans bilgisi eklendi.
+- `/identify`: `summary` + `description` — boru hattı adımlarını açıklar.
+- `POST /turtles/{id}/photos`: Otomatik gömme güncelleme davranışını belgeler.
+- `GET /turtles/{id}/route`: GeoJSON çıktı yapısını açıklar.
+- `/turtles` yönlendiricisi: `responses={404: ...}` eklendi.
+
+**Sonraki adımlar (üretim öncesi):**
+- `ml/training/train_arcface.py` ile SeaTurtleID2022 üzerinde ince ayar yapılması → beklenen Rank-1 ≥%65.
+- Yüksek trafikli yükleme için fotoğraf gömme işlemini arka plan kuyruğuna (Celery/ARQ) taşıma.
+- HTTPS + kimlik doğrulama (JWT/API anahtarı) üretim dağıtımı için.
+
 ## 2026-05-04 Phase 5 — Frontend
 
 **Karar:** React 18 + TypeScript + Vite + React Router v6 + Leaflet ile 4 sayfalık SPA oluşturuldu. Harici state management kütüphanesi kullanılmadı (useState + fetch yeterli).
