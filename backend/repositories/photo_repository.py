@@ -32,9 +32,10 @@ class PhotoRepository:
         self._session = session
 
     async def upsert_embedding(self, photo_id: UUID, embedding: np.ndarray) -> None:
+        vec_literal = f"'[{','.join(str(x) for x in embedding.tolist())}]'"
         await self._session.execute(
-            text("UPDATE photos SET embedding = :vec WHERE id = :id"),
-            {"vec": embedding.tolist(), "id": str(photo_id)},
+            text(f"UPDATE photos SET embedding = {vec_literal}::vector WHERE id = :id"),
+            {"id": str(photo_id)},
         )
         await self._session.commit()
 
@@ -70,6 +71,13 @@ class PhotoRepository:
             )
             for row in raw
         ]
+
+    async def list_by_turtle(self, turtle_id: UUID) -> list[Photo]:
+        """Bir kaplumbağaya ait tüm fotoğrafları yükleme tarihine göre döndürür."""
+        result = await self._session.execute(
+            select(Photo).where(Photo.turtle_id == turtle_id).order_by(Photo.uploaded_at.desc())
+        )
+        return list(result.scalars().all())
 
     async def get_by_id(self, photo_id: UUID) -> Photo | None:
         result = await self._session.execute(select(Photo).where(Photo.id == photo_id))

@@ -80,7 +80,10 @@ export const turtleApi = {
 // ── Photos ────────────────────────────────────────────────────────────────────
 
 export const photoApi = {
-  upload: (turtleId: string, file: File, region = "head") => {
+  list: (turtleId: string) =>
+    request<Photo[]>(`/turtles/${turtleId}/photos`),
+
+  upload: (turtleId: string, file: File, region = "body") => {
     const form = new FormData();
     form.append("file", file);
     return request<Photo>(`/turtles/${turtleId}/photos?region=${region}`, {

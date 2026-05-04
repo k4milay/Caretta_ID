@@ -4,10 +4,9 @@ import "./DropZone.css";
 interface Props {
   onFile: (file: File) => void;
   accept?: string;
-  label?: string;
 }
 
-export default function DropZone({ onFile, accept = "image/*", label = "Fotoğraf yüklemek için tıklayın veya sürükleyin" }: Props) {
+export default function DropZone({ onFile, accept = "image/*" }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
@@ -38,10 +37,18 @@ export default function DropZone({ onFile, accept = "image/*", label = "Fotoğra
       onDrop={onDrop}
     >
       <input ref={inputRef} type="file" accept={accept} onChange={onChange} hidden />
-      {preview
-        ? <img src={preview} alt="önizleme" className="dropzone-preview" />
-        : <span className="dropzone-label">📷 {label}</span>
-      }
+      {preview ? (
+        <img src={preview} alt="önizleme" className="dropzone-preview" />
+      ) : (
+        <>
+          <div className="dropzone-icon">📷</div>
+          <div className="dropzone-label">
+            Fotoğraf yüklemek için tıklayın<br />
+            <span style={{ color: "var(--muted)", fontWeight: 400 }}>veya sürükleyip bırakın</span>
+          </div>
+          <div className="dropzone-sub">JPG, PNG, WEBP</div>
+        </>
+      )}
     </div>
   );
 }

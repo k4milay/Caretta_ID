@@ -1,15 +1,30 @@
-"""Photo management routes — upload a photo for a registered turtle."""
+"""Fotoğraf yönetim rotaları — kaplumbağa fotoğrafı yükleme ve listeleme."""
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 
 from agents.profile_management_agent import AddPhotoAction, ProfileManagementAgent
-from core.dependencies import profile_agent
+from core.dependencies import photo_repo, profile_agent
+from repositories.photo_repository import PhotoRepository
 from models.schemas import PhotoRead
 
 router = APIRouter(prefix="/turtles/{turtle_id}/photos", tags=["photos"])
 
-_MAX_BYTES = 20 * 1024 * 1024
+_MAX_BYTES = 20 * 1024 * 1024  # 20 MB dosya boyutu sınırı
+
+
+@router.get(
+    "",
+    response_model=list[PhotoRead],
+    summary="Kaplumbağa Fotoğraflarını Listele",
+)
+async def list_photos(
+    turtle_id: UUID,
+    repo: PhotoRepository = Depends(photo_repo),
+) -> list[PhotoRead]:
+    """Bir kaplumbağaya ait tüm fotoğrafları döndürür."""
+    photos = await repo.list_by_turtle(turtle_id)
+    return [PhotoRead.model_validate(p) for p in photos]
 
 
 @router.post(

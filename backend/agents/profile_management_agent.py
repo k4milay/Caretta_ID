@@ -1,12 +1,12 @@
-"""ProfileManagementAgent — owns the lifecycle of turtle profiles and photos.
+"""ProfileManagementAgent — kaplumbağa profillerinin ve fotoğrafların yaşam döngüsünü yönetir.
 
-Responsibilities (single):
-  Create/read/update/delete turtle records and associate photos with them.
-  When a photo is added, it is preprocessed and embedded before storage
-  so the vector index stays in sync automatically.
+Sorumluluklar:
+  Kaplumbağa kayıtlarını oluştur/oku/güncelle/sil ve fotoğrafları ilişkilendir.
+  Fotoğraf eklendiğinde, vektör indeksi otomatik senkronize kalsın diye
+  önce ön işlemden geçirilir, sonra 3-bölge ağırlıklı gömme vektörü üretilir.
 
-Input : ProfileAction  (discriminated union of sub-actions)
-Output: ProfileResult  (typed result matching the action)
+Giriş : ProfileAction  (alt eylemler ayrışık birleşim)
+Çıkış : ProfileResult  (eyleme eşleşen tipli sonuç)
 """
 from __future__ import annotations
 
@@ -23,21 +23,24 @@ from models.db import Photo, Turtle
 from repositories.photo_repository import PhotoRepository
 from repositories.turtle_repository import TurtleRepository
 
+# Fotoğraf yükleme dizini — ortam değişkeninden veya varsayılan
 _UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "uploads"))
 
 
-# ── Sub-action payloads ────────────────────────────────────────────────────────
+# ── Alt eylem veri sınıfları ───────────────────────────────────────────────────
 
 @dataclass
 class AddPhotoAction:
+    """Kaplumbağa profiline fotoğraf ekleme eylemi."""
     kind: Literal["add_photo"] = field(default="add_photo", init=False)
     turtle_id: uuid.UUID
     image_bytes: bytes
-    region: str = "head"
+    region: str = "body"  # Varsayılan: tam vücut tespiti
 
 
 @dataclass
 class RegisterTurtleAction:
+    """Yeni kaplumbağa kaydı oluşturma eylemi."""
     kind: Literal["register"] = field(default="register", init=False)
     name: str
     notes: str | None = None
@@ -45,6 +48,7 @@ class RegisterTurtleAction:
 
 @dataclass
 class UpdateTurtleAction:
+    """Mevcut kaplumbağa profilini güncelleme eylemi."""
     kind: Literal["update"] = field(default="update", init=False)
     turtle_id: uuid.UUID
     name: str | None = None
@@ -53,27 +57,32 @@ class UpdateTurtleAction:
 
 @dataclass
 class DeleteTurtleAction:
+    """Kaplumbağa profilini silme eylemi."""
     kind: Literal["delete"] = field(default="delete", init=False)
     turtle_id: uuid.UUID
 
 
+# Ayrışık birleşim tipi — tip güvenli eylem gönderimi için
 ProfileAction = RegisterTurtleAction | UpdateTurtleAction | DeleteTurtleAction | AddPhotoAction
 
 
-# ── Result types ──────────────────────────────────────────────────────────────
+# ── Sonuç tipleri ─────────────────────────────────────────────────────────────
 
 @dataclass
 class ProfileResult:
+    """Profil yönetim eylemi sonucu."""
     turtle: Turtle | None = None
     photo: Photo | None = None
     deleted: bool = False
     message: str = ""
 
 
-# ── Agent ─────────────────────────────────────────────────────────────────────
+# ── Ajan ──────────────────────────────────────────────────────────────────────
 
 class ProfileManagementAgent(BaseAgent[ProfileAction, ProfileResult]):
-    name = "ProfileManagement"
+    """Kaplumbağa profili ve fotoğraf yaşam döngüsünü yöneten ajan."""
+
+    name = "ProfilYonetimi"
 
     def __init__(
         self,
@@ -89,72 +98,100 @@ class ProfileManagementAgent(BaseAgent[ProfileAction, ProfileResult]):
         self._feature_extraction = feature_extraction
 
     async def _execute(self, payload: ProfileAction) -> ProfileResult:
+        """Eylem tipine göre doğru metodu çağırır."""
         if isinstance(payload, RegisterTurtleAction):
-            return await self._register(payload)
+            return await self._kaydet(payload)
         if isinstance(payload, UpdateTurtleAction):
-            return await self._update(payload)
+            return await self._guncelle(payload)
         if isinstance(payload, DeleteTurtleAction):
-            return await self._delete(payload)
+            return await self._sil(payload)
         if isinstance(payload, AddPhotoAction):
-            return await self._add_photo(payload)
-        raise TypeError(f"Unknown action type: {type(payload)}")
+            return await self._fotograf_ekle(payload)
+        raise TypeError(f"Bilinmeyen eylem tipi: {type(payload)}")
 
-    async def _register(self, action: RegisterTurtleAction) -> ProfileResult:
-        turtle = await self._turtles.create(name=action.name, notes=action.notes)
-        return ProfileResult(turtle=turtle, message=f"Registered '{turtle.name}' (id={turtle.id})")
-
-    async def _update(self, action: UpdateTurtleAction) -> ProfileResult:
-        turtle = await self._turtles.get_by_id(action.turtle_id)
-        if not turtle:
-            raise ValueError(f"Turtle {action.turtle_id} not found.")
-        if action.name:
-            turtle.name = action.name
-        if action.notes is not None:
-            turtle.notes = action.notes
-        await self._turtles._session.commit()
-        await self._turtles._session.refresh(turtle)
-        return ProfileResult(turtle=turtle, message="Profile updated.")
-
-    async def _delete(self, action: DeleteTurtleAction) -> ProfileResult:
-        deleted = await self._turtles.delete(action.turtle_id)
-        if not deleted:
-            raise ValueError(f"Turtle {action.turtle_id} not found.")
-        return ProfileResult(deleted=True, message="Turtle and all associated records deleted.")
-
-    async def _add_photo(self, action: AddPhotoAction) -> ProfileResult:
-        turtle = await self._turtles.get_by_id(action.turtle_id)
-        if not turtle:
-            raise ValueError(f"Turtle {action.turtle_id} not found.")
-
-        # Preprocess
-        prep_result = await self._preprocessing.run(
-            PreprocessingInput(image_bytes=action.image_bytes, region=action.region)
+    async def _kaydet(self, eylem: RegisterTurtleAction) -> ProfileResult:
+        """Yeni kaplumbağa profilini veritabanına kaydeder."""
+        kaplumbaga = await self._turtles.create(name=eylem.name, notes=eylem.notes)
+        return ProfileResult(
+            turtle=kaplumbaga,
+            message=f"'{kaplumbaga.name}' kaydedildi (id={kaplumbaga.id})"
         )
-        if not prep_result.ok:
-            raise RuntimeError(f"Preprocessing failed: {prep_result.error}")
 
-        # Embed
-        feat_result = await self._feature_extraction.run(
+    async def _guncelle(self, eylem: UpdateTurtleAction) -> ProfileResult:
+        """Mevcut kaplumbağa profilini günceller."""
+        kaplumbaga = await self._turtles.get_by_id(eylem.turtle_id)
+        if not kaplumbaga:
+            raise ValueError(f"Kaplumbağa bulunamadı: {eylem.turtle_id}")
+        if eylem.name:
+            kaplumbaga.name = eylem.name
+        if eylem.notes is not None:
+            kaplumbaga.notes = eylem.notes
+        # Oturumu kaydet ve nesneyi yenile
+        await self._turtles._session.commit()
+        await self._turtles._session.refresh(kaplumbaga)
+        return ProfileResult(turtle=kaplumbaga, message="Profil güncellendi.")
+
+    async def _sil(self, eylem: DeleteTurtleAction) -> ProfileResult:
+        """Kaplumbağa ve ilişkili tüm kayıtları siler."""
+        silindi = await self._turtles.delete(eylem.turtle_id)
+        if not silindi:
+            raise ValueError(f"Kaplumbağa bulunamadı: {eylem.turtle_id}")
+        return ProfileResult(deleted=True, message="Kaplumbağa ve tüm ilişkili kayıtlar silindi.")
+
+    async def _fotograf_ekle(self, eylem: AddPhotoAction) -> ProfileResult:
+        """
+        Fotoğrafı ekler: ön işleme → 3 bölge gömme → dosya kaydet → DB yaz.
+
+        Senkron gömme: fotoğraf anında aranabilir olur; arka plan kuyruğu gerekmez.
+        Yüksek trafikte Celery/ARQ'ya taşınabilir.
+        """
+        # Kaplumbağanın varlığını doğrula
+        kaplumbaga = await self._turtles.get_by_id(eylem.turtle_id)
+        if not kaplumbaga:
+            raise ValueError(f"Kaplumbağa bulunamadı: {eylem.turtle_id}")
+
+        # Aşama 1 — Görüntü ön işleme ve 3 bölge tespiti
+        on_isleme = await self._preprocessing.run(
+            PreprocessingInput(image_bytes=eylem.image_bytes, region=eylem.region)
+        )
+        if not on_isleme.ok:
+            raise RuntimeError(f"Ön işleme başarısız: {on_isleme.error}")
+
+        on = on_isleme.value
+
+        # Aşama 2 — Üç bölge ağırlıklı gömme vektörü üretimi
+        ozellik = await self._feature_extraction.run(
             FeatureInput(
-                image=prep_result.value.segmentation.roi,
-                mask=prep_result.value.segmentation.mask,
+                image=on.normalised,
+                mask=on.segmentation.mask,
+                region_head=on.region_head,
+                region_carapace=on.region_carapace,
+                region_body=on.region_body,
             )
         )
-        if not feat_result.ok:
-            raise RuntimeError(f"Embedding failed: {feat_result.error}")
+        if not ozellik.ok:
+            raise RuntimeError(f"Gömme başarısız: {ozellik.error}")
 
-        # Persist file
-        file_path = self._save_file(action.turtle_id, action.image_bytes)
+        # Aşama 3 — Dosyayı diske kaydet
+        dosya_yolu = self._dosya_kaydet(eylem.turtle_id, eylem.image_bytes)
 
-        # Store DB record + embedding
-        photo = await self._photos.create(turtle_id=action.turtle_id, file_path=str(file_path))
-        await self._photos.upsert_embedding(photo.id, feat_result.value.embedding)
+        # Aşama 4 — Veritabanına kayıt ve gömme vektörünü güncelle
+        fotograf = await self._photos.create(
+            turtle_id=eylem.turtle_id, file_path=str(dosya_yolu)
+        )
+        await self._photos.upsert_embedding(fotograf.id, ozellik.value.embedding)
 
-        return ProfileResult(photo=photo, message=f"Photo {photo.id} added and embedded.")
+        return ProfileResult(
+            photo=fotograf,
+            message=f"Fotoğraf {fotograf.id} eklendi ve gömme vektörü güncellendi."
+        )
 
-    def _save_file(self, turtle_id: uuid.UUID, data: bytes) -> Path:
-        dest_dir = _UPLOAD_DIR / str(turtle_id)
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest = dest_dir / f"{uuid.uuid4()}.jpg"
-        dest.write_bytes(data)
-        return dest
+    def _dosya_kaydet(self, kaplumbaga_id: uuid.UUID, veri: bytes) -> Path:
+        """Fotoğraf baytlarını kaplumbağa klasörüne JPEG olarak kaydeder."""
+        # Kaplumbağa için alt klasör oluştur
+        hedef_klasor = _UPLOAD_DIR / str(kaplumbaga_id)
+        hedef_klasor.mkdir(parents=True, exist_ok=True)
+        # Benzersiz dosya adı üret
+        hedef = hedef_klasor / f"{uuid.uuid4()}.jpg"
+        hedef.write_bytes(veri)
+        return hedef

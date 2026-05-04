@@ -50,7 +50,16 @@ ml/models/*.onnx
 
 # ── Uploads / data ────────────────────────────────────────────────────────────
 backend/uploads/
-data/
+uploads/
+data/sample_photos/*/
+data/SeaTurtleID2022/
+data/test_sonuclari.json
+
+# Coverage raporları
+coverage.json
+
+# .gitkeep dosyaları korunur (boş klasörler için)
+!**/.gitkeep
 
 # ── Docker volumes / OS ───────────────────────────────────────────────────────
 .DS_Store

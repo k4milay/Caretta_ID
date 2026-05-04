@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.utils import get_openapi
+from fastapi.staticfiles import StaticFiles
 
 from core.logging import configure_logging, get_logger
 from api.routes import health, identify, photos, sightings, turtles
@@ -67,3 +68,8 @@ app.include_router(identify.router)
 app.include_router(turtles.router)
 app.include_router(photos.router)
 app.include_router(sightings.router)
+
+# Yüklenen fotoğrafları statik dosya olarak sun
+_UPLOADS = Path("uploads")
+_UPLOADS.mkdir(exist_ok=True)
+app.mount("/api/static/uploads", StaticFiles(directory=str(_UPLOADS)), name="uploads")

@@ -26,11 +26,14 @@ from repositories.photo_repository import EmbeddingMatch
 
 from .base_agent import BaseAgent
 
-_CONFIDENCE_BANDS = [
-    (0.85, "high"),
-    (0.70, "medium"),
-    (0.60, "low"),
+# Güven bantları — tam vücut + 3 bölge gömme için ayarlandı (eşik: 0.78)
+_GUVEN_BANTLARI = [
+    (0.92, "high"),    # Yüksek güven: %92 ve üzeri
+    (0.85, "medium"),  # Orta güven:   %85 – %92
+    (0.78, "low"),     # Düşük güven:  %78 – %85
 ]
+# Geriye dönük uyumluluk için eski ad
+_CONFIDENCE_BANDS = _GUVEN_BANTLARI
 
 
 # ── Similarity Strategy ────────────────────────────────────────────────────────
