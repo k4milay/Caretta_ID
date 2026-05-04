@@ -28,9 +28,9 @@ from .base_agent import BaseAgent
 
 # Güven bantları — tam vücut + 3 bölge gömme için ayarlandı (eşik: 0.78)
 _GUVEN_BANTLARI = [
-    (0.92, "high"),    # Yüksek güven: %92 ve üzeri
-    (0.85, "medium"),  # Orta güven:   %85 – %92
-    (0.78, "low"),     # Düşük güven:  %78 – %85
+    (0.94, "high"),    # Yüksek güven: %94 ve üzeri
+    (0.89, "medium"),  # Orta güven:   %89 – %94
+    (0.84, "low"),     # Düşük güven:  %84 – %89
 ]
 # Geriye dönük uyumluluk için eski ad
 _CONFIDENCE_BANDS = _GUVEN_BANTLARI

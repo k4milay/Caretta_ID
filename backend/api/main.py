@@ -72,4 +72,4 @@ app.include_router(sightings.router)
 # Yüklenen fotoğrafları statik dosya olarak sun
 _UPLOADS = Path("uploads")
 _UPLOADS.mkdir(exist_ok=True)
-app.mount("/api/static/uploads", StaticFiles(directory=str(_UPLOADS)), name="uploads")
+app.mount("/static/uploads", StaticFiles(directory=str(_UPLOADS)), name="uploads")

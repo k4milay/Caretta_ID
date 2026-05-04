@@ -10,7 +10,7 @@ from uuid import UUID
 
 import numpy as np
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import select, text
+from sqlalchemy import delete as sql_delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.db import Photo
@@ -82,3 +82,10 @@ class PhotoRepository:
     async def get_by_id(self, photo_id: UUID) -> Photo | None:
         result = await self._session.execute(select(Photo).where(Photo.id == photo_id))
         return result.scalar_one_or_none()
+
+    async def delete_by_id(self, photo_id: UUID) -> bool:
+        result = await self._session.execute(
+            sql_delete(Photo).where(Photo.id == photo_id)
+        )
+        await self._session.commit()
+        return result.rowcount > 0

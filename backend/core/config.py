@@ -18,9 +18,9 @@ class Settings(BaseSettings):
     # Gömme vektörü boyutu (EfficientNet-B0 projeksiyon başlığı çıkışı)
     embedding_dim: int = 512
 
-    # Benzerlik eşiği — tam vücut + 3 bölge ağırlıklı gömme için 0.78
-    # (Tek bölge baş gömmeleri için 0.60 kullanılıyordu)
-    similarity_threshold: float = 0.78
+    # Benzerlik eşiği — EfficientNet + HSV renk histogramı karışık gömme için 0.84
+    # Renk bileşeni sayesinde farklı kategoriler (araba, insan) eşiğin altında kalır
+    similarity_threshold: float = 0.84
 
     # Döndürülecek maksimum eşleşme sayısı
     top_n_matches: int = 5

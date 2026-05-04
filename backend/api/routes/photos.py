@@ -1,7 +1,7 @@
 """Fotoğraf yönetim rotaları — kaplumbağa fotoğrafı yükleme ve listeleme."""
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, status
 
 from agents.profile_management_agent import AddPhotoAction, ProfileManagementAgent
 from core.dependencies import photo_repo, profile_agent
@@ -57,3 +57,20 @@ async def add_photo(
         raise HTTPException(status_code=422, detail=result.error)
 
     return PhotoRead.model_validate(result.value.photo)
+
+
+@router.delete(
+    "/{photo_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Fotoğraf Sil",
+)
+async def delete_photo(
+    turtle_id: UUID,
+    photo_id: UUID,
+    repo: PhotoRepository = Depends(photo_repo),
+) -> Response:
+    """Bir kaplumbağaya ait fotoğrafı ve gömme vektörünü siler."""
+    deleted = await repo.delete_by_id(photo_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Fotoğraf bulunamadı.")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -91,6 +91,16 @@ export const photoApi = {
       body: form,
     });
   },
+
+  delete: (turtleId: string, photoId: string) =>
+    fetch(`${BASE}/turtles/${turtleId}/photos/${photoId}`, { method: "DELETE" }),
+
+  url: (filePath: string): string => {
+    // filePath örneği: "uploads/<turtle_id>/<uuid>.jpg"
+    // Vite proxy /api → "" dönüşümü yaptığı için /api prefix olmadan kullan
+    const normalized = filePath.replace(/\\/g, "/").replace(/^uploads\//, "");
+    return `/api/static/uploads/${normalized}`;
+  },
 };
 
 // ── Sightings ─────────────────────────────────────────────────────────────────

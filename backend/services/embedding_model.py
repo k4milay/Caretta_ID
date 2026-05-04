@@ -1,14 +1,17 @@
-"""EfficientNet-B0 embedding model.
+"""EfficientNet-B0 + HSV color histogram combined embedding.
 
 Architecture:
   EfficientNet-B0 backbone (ImageNet pretrained)
-  → GlobalAveragePool  (1280-d)
-  → Linear(1280, 512) + BN + ReLU
-  → L2-normalise  → 512-d unit hypersphere embedding
+  → GlobalAveragePool (1280-d)
+  → Linear(1280, 512) + BN + ReLU + L2-norm  → 512-d semantic vector
 
-Metric-learning fine-tuning (ArcFace/triplet) happens in ml/training/.
-torch/torchvision are imported lazily so this module is safe to import in
-test environments without a GPU stack.
+  HSV color histogram: H=32 bins × V=16 bins = 512-d → L2-norm
+
+  Final: 0.60 × semantic + 0.40 × color → L2-norm → 512-d
+
+Mixing color histogram makes visually distinct subjects (car vs turtle,
+baby vs adult) produce meaningfully different embeddings even without
+metric-learning fine-tuning.
 """
 from __future__ import annotations
 
@@ -17,6 +20,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import cv2
 import numpy as np
 
 if TYPE_CHECKING:
@@ -25,6 +29,10 @@ if TYPE_CHECKING:
 EMBEDDING_DIM = 512
 _WEIGHTS_PATH = Path("ml/models/efficientnet_head.pt")
 _model_lock = threading.Lock()
+
+# Mixing weights — semantic vs colour
+_W_SEMANTIC = 0.60
+_W_COLOR    = 0.40
 
 
 def _build_model() -> "nn.Module":
@@ -66,9 +74,29 @@ def get_embedder() -> "nn.Module":
     return model
 
 
+def _color_histogram(image_bgr: np.ndarray) -> np.ndarray:
+    """512-d HSV color histogram (H=32 bins, V=16 bins), L2-normalised.
+
+    Captures dominant colour distribution — highly discriminative for
+    visually distinct subjects (car vs turtle, baby vs adult).
+    """
+    hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
+    # H axis: 0-180, V axis: 0-256 → 32×16 = 512 bins
+    hist = cv2.calcHist([hsv], [0, 2], None, [32, 16], [0, 180, 0, 256])
+    flat = hist.flatten().astype(np.float32)
+    norm = np.linalg.norm(flat)
+    if norm < 1e-9:
+        return np.zeros(EMBEDDING_DIM, dtype=np.float32)
+    return flat / norm
+
+
 def embed_image(image_bgr: np.ndarray) -> np.ndarray:
-    """Return a 512-d L2-normalised numpy float32 vector."""
-    import cv2
+    """512-d combined embedding: 60% EfficientNet semantic + 40% HSV colour.
+
+    The colour component ensures visually unrelated images (e.g. a car vs a
+    sea turtle) score well below the 0.84 acceptance threshold even when the
+    deep network assigns similar category-level features.
+    """
     import torch
     from torchvision import transforms
 
@@ -79,6 +107,14 @@ def embed_image(image_bgr: np.ndarray) -> np.ndarray:
 
     rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
     tensor = _transform(rgb).unsqueeze(0)
+
     with _model_lock, torch.no_grad():
-        vec = get_embedder()(tensor)
-    return vec.squeeze(0).numpy().astype(np.float32)
+        semantic_vec = get_embedder()(tensor).squeeze(0).numpy().astype(np.float32)
+
+    color_vec = _color_histogram(image_bgr)
+
+    combined = _W_SEMANTIC * semantic_vec + _W_COLOR * color_vec
+    norm = np.linalg.norm(combined)
+    if norm < 1e-9:
+        return semantic_vec
+    return (combined / norm).astype(np.float32)

@@ -36,8 +36,9 @@ export default function TurtleProfilePage() {
   const [editNotes, setEditNotes] = useState("");
   const [saving,    setSaving]    = useState(false);
 
-  const [activeTab, setActiveTab] = useState<"gallery"|"photos"|"sightings">("gallery");
-  const [lightbox,  setLightbox]  = useState<string | null>(null);
+  const [activeTab,   setActiveTab]   = useState<"gallery"|"photos"|"sightings">("gallery");
+  const [lightbox,    setLightbox]    = useState<string | null>(null);
+  const [deletingId,  setDeletingId]  = useState<string | null>(null);
 
   useEffect(() => { if (id) load(); }, [id]);
 
@@ -103,11 +104,15 @@ export default function TurtleProfilePage() {
     navigate("/turtles");
   }
 
-  // Fotoğraf URL'ini backend static endpoint'inden oluştur
-  // file_path örneği: "uploads/uuid/uuid.jpg"
-  function photoUrl(filePath: string): string {
-    const normalized = filePath.replace(/\\/g, "/").replace(/^uploads\//, "");
-    return `/api/static/uploads/${normalized}`;
+  async function handleDeletePhoto(photoId: string) {
+    if (!id || deletingId) return;
+    setDeletingId(photoId);
+    try {
+      await photoApi.delete(id, photoId);
+      setPhotos(prev => prev.filter(p => p.id !== photoId));
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   if (loading) return (
@@ -136,9 +141,9 @@ export default function TurtleProfilePage() {
           <div style={{ display: "flex", alignItems: "center", gap: "1.25rem" }}>
             {/* Profil fotoğrafı veya avatar */}
             {photos.length > 0 ? (
-              <img src={photoUrl(photos[0].file_path)} alt={turtle.name}
+              <img src={photoApi.url(photos[0].file_path)} alt={turtle.name}
                 style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover", border: `3px solid ${ac}`, boxShadow: `0 4px 14px ${ac}44`, flexShrink: 0, cursor: "pointer" }}
-                onClick={() => setLightbox(photoUrl(photos[0].file_path))}
+                onClick={() => setLightbox(photoApi.url(photos[0].file_path))}
                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
               />
             ) : (
@@ -236,10 +241,10 @@ export default function TurtleProfilePage() {
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "1rem" }}>
               {photos.map((p, i) => (
-                <div key={p.id} style={{ position: "relative", borderRadius: 12, overflow: "hidden", aspectRatio: "1", cursor: "zoom-in", boxShadow: "var(--shadow)", border: "1px solid var(--border)" }}
-                  onClick={() => setLightbox(photoUrl(p.file_path))}>
-                  <img src={photoUrl(p.file_path)} alt={`fotoğraf ${i+1}`}
-                    style={{ width: "100%", height: "100%", objectFit: "cover", transition: "transform .2s" }}
+                <div key={p.id} style={{ position: "relative", borderRadius: 12, overflow: "hidden", aspectRatio: "1", boxShadow: "var(--shadow)", border: "1px solid var(--border)" }}>
+                  <img src={photoApi.url(p.file_path)} alt={`fotoğraf ${i+1}`}
+                    style={{ width: "100%", height: "100%", objectFit: "cover", cursor: "zoom-in", transition: "transform .2s" }}
+                    onClick={() => setLightbox(photoApi.url(p.file_path))}
                     onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.04)")}
                     onMouseLeave={(e) => (e.currentTarget.style.transform = "")}
                     onError={(e) => { (e.currentTarget.parentElement!.style.background = "var(--bg)"); (e.currentTarget.style.display = "none"); }}
@@ -249,7 +254,15 @@ export default function TurtleProfilePage() {
                       ANA
                     </span>
                   )}
-                  <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(transparent,rgba(0,0,0,.55))", padding: ".4rem .6rem" }}>
+                  {/* Silme butonu */}
+                  <button
+                    onClick={() => handleDeletePhoto(p.id)}
+                    disabled={deletingId === p.id}
+                    title="Fotoğrafı sil"
+                    style={{ position: "absolute", top: 6, right: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(220,38,38,.85)", border: "none", color: "#fff", fontSize: ".8rem", fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1, backdropFilter: "blur(4px)" }}>
+                    {deletingId === p.id ? "…" : "×"}
+                  </button>
+                  <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(transparent,rgba(0,0,0,.55))", padding: ".4rem .6rem", pointerEvents: "none" }}>
                     <div style={{ fontSize: ".7rem", color: "rgba(255,255,255,.85)" }}>
                       {new Date(p.uploaded_at).toLocaleDateString("tr-TR")}
                     </div>
