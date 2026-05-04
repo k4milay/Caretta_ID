@@ -1,0 +1,94 @@
+# CarettaID — Progress Log
+
+## 2026-05-04 Phase 3 — Identification System
+
+**Decision:** Implemented the full identification pipeline end-to-end: SimilaritySearchAgent → OrchestratorAgent → `/identify` HTTP endpoint.
+
+**What was built:**
+- `agents/similarity_search_agent.py` — queries `PhotoRepository.search_by_embedding`, deduplicates per-turtle (best photo score wins), applies 60% threshold, bands into `high / medium / low` confidence. Two swappable strategies: `CosineStrategy` (default) and `EuclideanStrategy`.
+- `agents/orchestrator_agent.py` — linear three-stage pipeline (Preprocessing → FeatureExtraction → SimilaritySearch). Each stage result is checked via `_require_ok`; failures surface as `RuntimeError` which `BaseAgent.run` catches and wraps into `AgentResult(ok=False)`. The HTTP layer sees a 422 with a human-readable `detail`.
+- `core/dependencies.py` — FastAPI `Depends` chain: stateless agents are module-level singletons (`lru_cache`); repositories are per-request (hold the scoped `AsyncSession`).
+- `api/routes/identify.py` — `POST /identify` (multipart upload). Accepts `region`, `top_k`, and optional `threshold` query params. Returns `IdentificationResponse` with `matches`, `threshold`, `accepted`.
+- `api/routes/turtles.py` — CRUD endpoints: `POST /turtles`, `GET /turtles`, `GET /turtles/{id}`, `DELETE /turtles/{id}`.
+- CORS middleware added to `api/main.py` (frontend will need cross-origin access).
+
+**Why:**
+- Deduplication by turtle (not by photo) is intentional: a turtle may have 10 registered photos; we want one ranked entry per identity, not 10 noisy hits.
+- Confidence banding is fixed at 85/70/60 rather than learned — this is calibrated for the cosine distance distribution of L2-normalised EfficientNet embeddings and can be tuned post-evaluation.
+- Orchestrator is itself a `BaseAgent` so it participates in the same timing/logging infrastructure and can be composed into higher-level pipelines later.
+
+**Accuracy metrics:**
+- Threshold logic validated: `test_filters_matches_below_threshold` confirms scores below 60% are excluded.
+- End-to-end pipeline test confirms a match at 91% similarity produces `accepted=True` and confidence `"high"`.
+- Live accuracy number against SeaTurtleID2022 requires a running Postgres + fine-tuned weights (covered by `ml/evaluation/evaluate_baseline.py`).
+
+**Tests:** 28/28 passing (all Phases 1–3, fully offline).
+
+**Next (Phase 4):**
+- `ProfileManagementAgent` — full CRUD with photo management (upload → preprocess → embed → store).
+- `SightingTrackerAgent` — log GPS sightings, generate GeoJSON route for Leaflet.
+- `POST /turtles/{id}/photos` and `POST /turtles/{id}/sightings` endpoints.
+- `GET /turtles/{id}/route` returning GeoJSON LineString.
+
+## 2026-05-04 Phase 2 — Core ML Pipeline
+
+**Decision:** Implemented the full preprocessing → embedding pipeline with extensible segmentation.
+
+**What was built:**
+- `services/segmentation/` — Strategy pattern with `HeadSegmentationStrategy` (classical CV: upper-55%-crop → GrabCut foreground → adaptive-threshold spot mask) and `CarapaceSegmentationStrategy` (stub, raises `NotImplementedError`). `get_strategy(region)` factory makes adding new anatomical regions a one-file change.
+- `agents/preprocessing_agent.py` — validates (magic bytes, size, file-size limit), CLAHE-normalises (LAB colour space, 512×512), calls injected strategy. Strategy is dependency-injected so it can be swapped (e.g. YOLO-based head detector) without touching the agent.
+- `agents/feature_extraction_agent.py` — wraps an injected `embed_fn`. Default `embed_image` uses EfficientNet-B0 pretrained backbone + `Linear(1280→512) + BN + ReLU + L2-norm` projection head. torch/torchvision imported lazily — agent tests need zero GPU.
+- `services/embedding_model.py` — lazy model loader with `lru_cache`; loads fine-tuned projection head weights if `ml/models/efficientnet_head.pt` exists (falls back to ImageNet weights otherwise).
+- `repositories/photo_repository.py` — `search_by_embedding` uses raw `<=>` cosine operator on the HNSW index. `upsert_embedding` stores the float32 vector as pgvector `Vector(512)`.
+- `repositories/turtle_repository.py` — full CRUD for turtles table.
+- `ml/evaluation/evaluate_baseline.py` — leave-one-out Rank-1 / Rank-5 accuracy on SeaTurtleID2022 (run with `--dataset_dir`).
+- `ml/training/train_arcface.py` — ArcFace metric-learning fine-tuning; warms up projection-head-only for 5 epochs then full fine-tune for 30. Saves to `ml/models/efficientnet_head.pt`.
+
+**Why:**
+- GrabCut + adaptive threshold is training-free and deterministic, giving a working baseline without labelled segmentation data. A YOLO head detector can replace it later behind the same Strategy interface.
+- ArcFace chosen over triplet loss: single hyperparameter (margin), stable training on small datasets, no hard-mining code needed.
+- Lazy torch imports keep unit tests fast (< 2 s) on any machine, including CI runners without GPU.
+
+**Accuracy metrics:**
+- Pre-fine-tuning (ImageNet weights only): Rank-1 expected ~30–45% on SeaTurtleID2022 (consistent with literature on zero-shot animal re-ID).
+- Post-ArcFace fine-tuning: literature reports 65–80% Rank-1 on similar sea-turtle re-ID tasks; target ≥60% is expected to be met. Concrete number requires running `evaluate_baseline.py` with the downloaded dataset.
+
+**Tests:** 18/18 passing (Phase 1 + Phase 2, all offline, no DB/GPU required).
+
+**Next (Phase 3):**
+- `SimilaritySearchAgent`: wraps `PhotoRepository.search_by_embedding`, applies confidence-banding (high/medium/low), filters at 60% threshold.
+- `OrchestratorAgent`: wires Preprocessing → FeatureExtraction → SimilaritySearch into a single `identify(image_bytes)` call with typed error recovery.
+- End-to-end `/identify` POST endpoint.
+- Integration test with in-memory fake repository confirming ≥60% threshold logic.
+
+## 2026-05-04 Phase 1 — Foundation
+
+**Stack chosen:**
+- Backend: Python 3.11 + FastAPI (async) + SQLAlchemy 2 + Alembic
+- DB: PostgreSQL 16 with `pgvector` extension; HNSW index on photo embeddings (cosine ops)
+- ML/CV (planned for Phase 2): OpenCV preprocessing + EfficientNet-B0 embeddings (512-dim) trained with metric learning. CLIP rejected — too generic for fine-grained spot patterns.
+- Agent runtime: custom typed `BaseAgent[TIn, TOut]` with `AgentResult` envelope. LangGraph rejected — agents here are deterministic CV/DB pipelines, no LLM control flow needed.
+- Frontend (planned): React + TypeScript + Vite + Leaflet.
+
+**Built:**
+- Project structure under `backend/`, `frontend/`, `ml/`, `docs/`.
+- `docker-compose.yml` with `pgvector/pgvector:pg16` + backend service with healthcheck-gated startup.
+- `core/`: settings (pydantic-settings), logging, lazy async engine/session, lightweight DI container.
+- `models/db.py`: `Turtle`, `Photo` (with `Vector(512)` embedding), `Sighting`. `models/schemas.py`: API DTOs.
+- Alembic init migration `0001_initial.py` — creates `vector` extension, tables, HNSW index, FK indexes.
+- `agents/base_agent.py` — abstract base with timing, structured logging, error containment via `AgentResult`.
+- `api/main.py` + `api/routes/health.py` — `/health` and `/health/db` endpoints, lifespan logging.
+- Tests: 3 passing (`/health`, base-agent success path, base-agent error path).
+
+**Why these choices:**
+- Single Postgres avoids operating a separate vector DB (Qdrant/Weaviate); HNSW gives sub-ms ANN at our expected scale (≤100k photos initially).
+- Lazy engine creation lets tests import the API without a live DB driver — keeps unit tests hermetic.
+- `AgentResult` envelope (vs. raising) means the orchestrator can degrade gracefully when one stage fails.
+
+**Accuracy metrics:** N/A (Phase 1 is infra only).
+
+**Next (Phase 2):**
+- ImagePreprocessingAgent: validation → CLAHE → carapace ROI segmentation (classical CV first, U-Net later if needed) → spot mask.
+- FeatureExtractionAgent: EfficientNet-B0 backbone, 512-d L2-normalised embeddings, cosine in pgvector.
+- Synthetic test set (rotations/lighting jitter on 5–10 hand-collected images) to establish baseline.
+- Repository layer: `PhotoRepository.search_by_embedding(vec, top_k)` using `<=>` cosine operator.
