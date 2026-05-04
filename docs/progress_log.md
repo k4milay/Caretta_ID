@@ -1,5 +1,31 @@
 # CarettaID — Progress Log
 
+## 2026-05-04 Phase 5 — Frontend
+
+**Karar:** React 18 + TypeScript + Vite + React Router v6 + Leaflet ile 4 sayfalık SPA oluşturuldu. Harici state management kütüphanesi kullanılmadı (useState + fetch yeterli).
+
+**Neler yapıldı:**
+- `package.json` / `vite.config.ts` / `tsconfig.json` — Vite dev sunucusu `/api/*` isteklerini `localhost:8000`'e proxy'ler; ayrı CORS yapılandırması gerekmez.
+- `src/index.css` — CSS değişkenleri (teal, sand, ink), kart / rozet / grid yardımcı sınıfları; harici UI kütüphanesi yok.
+- `src/services/api.ts` — Tüm uç noktaları saran tip güvenli fetch sarmalayıcıları: `turtleApi`, `photoApi`, `sightingApi`, `identifyApi`.
+- `components/Navbar.tsx` — Yapışkan gezinme çubuğu, aktif bağlantı vurgulaması.
+- `components/DropZone.tsx` — Tıklama + sürükle-bırak fotoğraf seçici, anında önizleme.
+- `components/MatchCard.tsx` — Animasyonlu benzerlik çubuğu, Türkçe güven rozeti (Yüksek/Orta/Düşük).
+- `components/RouteMap.tsx` — Leaflet haritası; GeoJSON'dan Point + LineString katmanlarını oluşturur, varsayılan ikon yolları düzeltildi.
+- `pages/IdentifyPage.tsx` — Fotoğraf yükle, top-K ve eşik kaydırıcıları, sıralı MatchCard listesi, eşleşme yoksa "Yeni Kayıt" yönlendirmesi.
+- `pages/TurtleListPage.tsx` — İsim ile istemci taraflı filtreleme, kaplumbağa başına kart grid görünümü.
+- `pages/TurtleProfilePage.tsx` — Profil düzenleme, fotoğraf yükleme (otomatik gömme güncelleme), gözlem kayıt formu, gözlem geçmişi listesi, Leaflet rota haritası.
+- `pages/AddTurtlePage.tsx` — 3 adımlı iş akışı (Bilgi → Fotoğraf → Bitti) ilerleme göstergesiyle.
+
+**Neden:**
+- Vite proxy'si backend CORS değişikliği gerektirmez ve geliştirmeyi üretim yapılandırmasıyla hizalar.
+- Leaflet doğrudan import edildi (react-leaflet sarmalayıcı), tip dönüşümü üzerinde tam kontrol sağlar ve derleme boyutunu azaltır.
+- `vite-env.d.ts`'e PNG modül bildirimleri eklendi; aksi halde TypeScript Leaflet ikon importlarını reddederdi.
+
+**Derleme:** `tsc -b && vite build` — 0 hata, 338 KB JS (gzip: 108 KB).
+
+**Sonraki (Faz 6):** Birim testleri (>%80 kapsam), entegrasyon testleri, OpenAPI dokümantasyonu, progress_log.md'ye otomatik güncelleme.
+
 ## 2026-05-04 Phase 4 — Profile & Tracking
 
 **Decision:** Implemented `ProfileManagementAgent` and `SightingTrackerAgent` with full CRUD, photo-to-embedding pipeline, and GeoJSON route generation.
