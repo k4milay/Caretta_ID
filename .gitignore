@@ -51,9 +51,8 @@ ml/models/*.onnx
 # ── Uploads / data ────────────────────────────────────────────────────────────
 backend/uploads/
 uploads/
-data/sample_photos/*/
-data/SeaTurtleID2022/
-data/test_sonuclari.json
+
+# Keep project data under version control.
 
 # Coverage raporları
 coverage.json
