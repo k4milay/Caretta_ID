@@ -45,8 +45,10 @@ export interface MatchResult {
 
 export interface IdentificationResponse {
   matches: MatchResult[];
+  candidates: MatchResult[];
   threshold: number;
   accepted: boolean;
+  turtle_detected: boolean;
 }
 
 export type GeoJSON = Record<string, unknown>;
@@ -126,7 +128,7 @@ export const sightingApi = {
 // ── Identification ────────────────────────────────────────────────────────────
 
 export const identifyApi = {
-  identify: (file: File, region = "head", topK = 5) => {
+  identify: (file: File, region = "body", topK = 5) => {
     const form = new FormData();
     form.append("file", file);
     return request<IdentificationResponse>(

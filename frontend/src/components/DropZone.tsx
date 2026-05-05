@@ -41,12 +41,11 @@ export default function DropZone({ onFile, accept = "image/*" }: Props) {
         <img src={preview} alt="önizleme" className="dropzone-preview" />
       ) : (
         <>
-          <div className="dropzone-icon">📷</div>
+          <div className="dropzone-icon">🖼️</div>
           <div className="dropzone-label">
-            Fotoğraf yüklemek için tıklayın<br />
-            <span style={{ color: "var(--muted)", fontWeight: 400 }}>veya sürükleyip bırakın</span>
+            <strong>Fotoğraf seç</strong> veya buraya sürükle
           </div>
-          <div className="dropzone-sub">JPG, PNG, WEBP</div>
+          <div className="dropzone-sub">JPG · PNG · WEBP · maks. 20 MB</div>
         </>
       )}
     </div>

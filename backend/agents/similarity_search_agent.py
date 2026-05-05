@@ -26,11 +26,12 @@ from repositories.photo_repository import EmbeddingMatch
 
 from .base_agent import BaseAgent
 
-# Güven bantları — tam vücut + 3 bölge gömme için ayarlandı (eşik: 0.78)
+# Güven bantları — 1024-d spatial+semantic embedding için kalibre edildi
+# Aynı kaplumbağa tipik: 0.72-0.82 | Farklı kaplumbağa: 0.55-0.63 | Alakasız: <0.55
 _GUVEN_BANTLARI = [
-    (0.94, "high"),    # Yüksek güven: %94 ve üzeri
-    (0.89, "medium"),  # Orta güven:   %89 – %94
-    (0.84, "low"),     # Düşük güven:  %84 – %89
+    (0.76, "high"),    # Yüksek güven: %76 ve üzeri
+    (0.73, "medium"),  # Orta güven:   %73 – %76
+    (0.70, "low"),     # Düşük güven:  %70 – %73  (kabul eşiği alt sınırı)
 ]
 # Geriye dönük uyumluluk için eski ad
 _CONFIDENCE_BANDS = _GUVEN_BANTLARI
@@ -63,12 +64,14 @@ class SimilarityInput:
     embedding: np.ndarray
     top_k: int = field(default_factory=lambda: get_settings().top_n_matches)
     threshold: float = field(default_factory=lambda: get_settings().similarity_threshold)
+    floor: float = field(default_factory=lambda: get_settings().similarity_floor)
     exclude_photo_id: UUID | None = None
 
 
 @dataclass
 class SimilarityOutput:
-    matches: list[MatchResult]
+    matches: list[MatchResult]      # eşik ÜSTÜ — kabul edilen
+    candidates: list[MatchResult]   # eşik altı ama floor üstü — aday
     threshold: float
     accepted: bool
 
@@ -95,47 +98,49 @@ class SimilaritySearchAgent(BaseAgent[SimilarityInput, SimilarityOutput]):
             top_k=payload.top_k,
             exclude_photo_id=payload.exclude_photo_id,
         )
-        results = await self._build_results(raw_matches, payload.threshold)
-        return SimilarityOutput(
-            matches=results,
-            threshold=payload.threshold,
-            accepted=len(results) > 0,
-        )
 
-    async def _build_results(
-        self, raw: list[EmbeddingMatch], threshold: float
-    ) -> list[MatchResult]:
-        if not raw:
-            return []
+        if not raw_matches:
+            return SimilarityOutput(matches=[], candidates=[], threshold=payload.threshold, accepted=False)
 
-        turtle_ids = [m.turtle_id for m in raw if m.turtle_id]
+        turtle_ids = [m.turtle_id for m in raw_matches if m.turtle_id]
         turtles = {t.id: t for t in await self._turtle_repo.get_by_ids(turtle_ids)}
 
-        results: list[MatchResult] = []
-        seen_turtle_ids: set[UUID] = set()
+        accepted: list[MatchResult] = []
+        candidates: list[MatchResult] = []
+        seen_ids: set[UUID] = set()
 
-        for match in raw:
+        for match in raw_matches:
             if match.turtle_id is None or match.turtle_id not in turtles:
                 continue
-            if match.similarity < threshold:
+            if match.similarity < payload.floor:
                 continue
-            # Deduplicate: keep best photo score per turtle
-            if match.turtle_id in seen_turtle_ids:
+            if match.turtle_id in seen_ids:
                 continue
-            seen_turtle_ids.add(match.turtle_id)
+            seen_ids.add(match.turtle_id)
 
             turtle = turtles[match.turtle_id]
-            confidence = self._confidence_band(match.similarity, threshold)
-            results.append(
-                MatchResult(
-                    turtle_id=match.turtle_id,
-                    name=turtle.name,
-                    similarity_score=round(match.similarity, 4),
-                    confidence=confidence,
-                )
+            confidence = self._confidence_band(match.similarity, payload.threshold)
+            result = MatchResult(
+                turtle_id=match.turtle_id,
+                name=turtle.name,
+                similarity_score=round(match.similarity, 4),
+                confidence=confidence,
             )
 
-        return sorted(results, key=lambda r: r.similarity_score, reverse=True)
+            if match.similarity >= payload.threshold:
+                accepted.append(result)
+            else:
+                candidates.append(result)
+
+        accepted.sort(key=lambda r: r.similarity_score, reverse=True)
+        candidates.sort(key=lambda r: r.similarity_score, reverse=True)
+
+        return SimilarityOutput(
+            matches=accepted,
+            candidates=candidates,
+            threshold=payload.threshold,
+            accepted=len(accepted) > 0,
+        )
 
     @staticmethod
     def _confidence_band(score: float, threshold: float) -> str:

@@ -117,7 +117,7 @@ export default function TurtleProfilePage() {
 
   if (loading) return (
     <div className="page empty">
-      <div style={{ width: 34, height: 34, border: "3px solid var(--border)", borderTopColor: "var(--teal)", borderRadius: "50%", animation: "spin .7s linear infinite", margin: "0 auto" }} />
+      <div className="spinner" style={{ margin: "0 auto" }} />
     </div>
   );
   if (error) return <div className="page"><div className="card" style={{ color: "var(--danger)" }}>{error}</div></div>;
@@ -136,7 +136,7 @@ export default function TurtleProfilePage() {
       )}
 
       {/* Profil başlığı */}
-      <div style={{ background: "var(--white)", border: "1px solid var(--border)", borderRadius: 18, padding: "1.75rem", marginBottom: "1.25rem", boxShadow: "var(--shadow)" }}>
+      <div style={{ background: "var(--white)", border: "1px solid rgba(226,232,240,.7)", borderRadius: 24, padding: "1.75rem", marginBottom: "1.25rem", boxShadow: "var(--shadow-md)", overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "1.25rem" }}>
             {/* Profil fotoğrafı veya avatar */}
@@ -193,7 +193,7 @@ export default function TurtleProfilePage() {
       </div>
 
       {/* Harita */}
-      <div style={{ background: "var(--white)", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden", marginBottom: "1.25rem", boxShadow: "var(--shadow)" }}>
+      <div style={{ background: "var(--white)", border: "1px solid rgba(226,232,240,.7)", borderRadius: 24, overflow: "hidden", marginBottom: "1.25rem", boxShadow: "var(--shadow-md)" }}>
         <div style={{ padding: "1rem 1.5rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ fontWeight: 700, fontSize: ".95rem" }}>Hareket Rotası</div>
           {sonGozlem?.location_name && (
@@ -211,17 +211,22 @@ export default function TurtleProfilePage() {
       </div>
 
       {/* Sekmeler */}
-      <div style={{ display: "inline-flex", gap: ".25rem", marginBottom: "1.25rem", background: "var(--white)", border: "1px solid var(--border)", borderRadius: 10, padding: ".3rem" }}>
+      <div style={{ display: "inline-flex", gap: ".2rem", marginBottom: "1.25rem", background: "var(--white)", border: "1px solid rgba(226,232,240,.7)", borderRadius: 14, padding: ".3rem", boxShadow: "var(--shadow)" }}>
         {([
-          { key: "gallery", label: `Galeri (${photos.length})` },
-          { key: "photos",  label: "Fotoğraf Ekle" },
+          { key: "gallery",   label: `Galeri (${photos.length})` },
+          { key: "photos",    label: "Fotoğraf Ekle" },
           { key: "sightings", label: "Gözlem Ekle" },
         ] as const).map(({ key, label }) => (
           <button key={key} onClick={() => setActiveTab(key)}
-            style={{ padding: ".4rem 1.1rem", borderRadius: 7, fontWeight: 600, fontSize: ".88rem", border: "none", cursor: "pointer", transition: "all .15s",
+            style={{
+              padding: ".42rem 1.15rem", borderRadius: 10,
+              fontWeight: activeTab===key ? 700 : 500,
+              fontSize: ".875rem", border: "none", cursor: "pointer",
+              transition: "all .18s cubic-bezier(.4,0,.2,1)",
               background: activeTab===key ? "linear-gradient(135deg,#0d9488,#0891b2)" : "transparent",
               color: activeTab===key ? "#fff" : "var(--muted)",
-              boxShadow: activeTab===key ? "0 2px 8px rgba(13,148,136,.2)" : "none" }}>
+              boxShadow: activeTab===key ? "0 2px 10px rgba(13,148,136,.28), inset 0 1px 0 rgba(255,255,255,.15)" : "none",
+            }}>
             {label}
           </button>
         ))}
@@ -229,7 +234,7 @@ export default function TurtleProfilePage() {
 
       {/* Galeri sekmesi */}
       {activeTab === "gallery" && (
-        <div className="card" style={{ borderRadius: 16 }}>
+        <div className="card" style={{ borderRadius: 20, border: "1px solid rgba(226,232,240,.7)", boxShadow: "var(--shadow-md)" }}>
           {photos.length === 0 ? (
             <div style={{ textAlign: "center", padding: "3rem", color: "var(--muted)" }}>
               <div style={{ fontSize: "3rem", marginBottom: "1rem", opacity: .3 }}>📷</div>

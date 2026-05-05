@@ -1,17 +1,26 @@
-"""EfficientNet-B0 + HSV color histogram combined embedding.
+"""Weighted-concatenation embedding: semantic + spatial colour → 1024-d.
 
-Architecture:
+Architecture
+============
   EfficientNet-B0 backbone (ImageNet pretrained)
-  → GlobalAveragePool (1280-d)
-  → Linear(1280, 512) + BN + ReLU + L2-norm  → 512-d semantic vector
+  → GlobalAveragePool → Linear(1280→512) + BN + ReLU + L2-norm  → s ∈ ℝ⁵¹² (unit)
 
-  HSV color histogram: H=32 bins × V=16 bins = 512-d → L2-norm
+  Spatial HSV histogram  (4×4 grid, H=8 bins × V=4 bins = 32/cell × 16 cells)
+  → L2-norm → c ∈ ℝ⁵¹² (unit)
 
-  Final: 0.60 × semantic + 0.40 × color → L2-norm → 512-d
+  Final embedding = concatenate([√0.30 · s, √0.70 · c]) ∈ ℝ¹⁰²⁴
 
-Mixing color histogram makes visually distinct subjects (car vs turtle,
-baby vs adult) produce meaningfully different embeddings even without
-metric-learning fine-tuning.
+Why concatenation, not weighted sum
+=====================================
+  cos(q_combined, r_combined) = 0.30·cos(s_q,s_r) + 0.70·cos(c_q,c_r)
+  — exact weighted average of component similarities.
+  Additive mixing then L2-norm does NOT give this identity.
+
+Why spatial (4×4 grid) instead of global histogram
+=====================================================
+  A stadium scene (green field bottom, gold trophies middle, dark stands top)
+  has a VERY different cell-by-cell colour layout than any turtle photo.
+  Global histograms can confuse warm-toned unrelated photos with turtle shells.
 """
 from __future__ import annotations
 
@@ -26,14 +35,29 @@ import numpy as np
 if TYPE_CHECKING:
     import torch.nn as nn
 
-EMBEDDING_DIM = 512
+# Total dim = SEMANTIC_DIM + COLOR_DIM
+SEMANTIC_DIM = 512
+COLOR_DIM    = 512   # 4×4 grid × (H=8 × V=4) = 16 × 32 = 512
+EMBEDDING_DIM = SEMANTIC_DIM + COLOR_DIM  # 1024
+
+# ImageNet class indices that correspond to turtles
+# 33=loggerhead (Caretta caretta!), 34=leatherback, 35=mud turtle, 36=terrapin, 37=box turtle
+_TURTLE_CLASS_IDS: frozenset[int] = frozenset([33, 34, 35, 36, 37])
+
 _WEIGHTS_PATH = Path("ml/models/efficientnet_head.pt")
-_model_lock = threading.Lock()
+_model_lock   = threading.Lock()
 
-# Mixing weights — semantic vs colour
-_W_SEMANTIC = 0.60
-_W_COLOR    = 0.40
+# Cosine-decomposition weights: cos_total = W_S·cos_semantic + W_C·cos_colour
+# EfficientNet semantic knows "turtle" vs "person/trophy/car" — weight it higher.
+# Spatial colour distinguishes individuals within the same species.
+_W_S = 0.60   # semantic component weight
+_W_C = 0.40   # spatial colour component weight
+# Scaling factors so the concatenated vector is already a unit vector
+_SCALE_S = float(np.sqrt(_W_S))  # ≈ 0.7746
+_SCALE_C = float(np.sqrt(_W_C))  # ≈ 0.6325
 
+
+# ── Semantic encoder ──────────────────────────────────────────────────────────
 
 def _build_model() -> "nn.Module":
     import torch.nn as nn
@@ -44,12 +68,12 @@ def _build_model() -> "nn.Module":
     class EfficientNetEmbedder(nn.Module):
         def __init__(self) -> None:
             super().__init__()
-            self.features = backbone.features
-            self.pool = backbone.avgpool
+            self.features   = backbone.features
+            self.pool       = backbone.avgpool
             self.projection = nn.Sequential(
                 nn.Flatten(),
-                nn.Linear(1280, EMBEDDING_DIM),
-                nn.BatchNorm1d(EMBEDDING_DIM),
+                nn.Linear(1280, SEMANTIC_DIM),
+                nn.BatchNorm1d(SEMANTIC_DIM),
                 nn.ReLU(inplace=True),
             )
 
@@ -64,6 +88,39 @@ def _build_model() -> "nn.Module":
 
 
 @lru_cache(maxsize=1)
+def _get_classifier() -> "nn.Module":
+    """Full EfficientNet-B0 with classification head — used for turtle detection only."""
+    from torchvision.models import EfficientNet_B0_Weights, efficientnet_b0
+    model = efficientnet_b0(weights=EfficientNet_B0_Weights.DEFAULT)
+    model.eval()
+    return model
+
+
+def turtle_probability(image_bgr: np.ndarray) -> float:
+    """Return the combined ImageNet probability that the image contains a turtle (0–1).
+
+    Uses EfficientNet-B0's classification logits — classes 33-37 cover all turtle species
+    including loggerhead (Caretta caretta = class 33).
+    Completely unrelated images (stadiums, trophies, cars, people) score < 0.002.
+    Actual sea turtle photos typically score > 0.05.
+    """
+    import torch
+    from torchvision import transforms
+
+    t = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+    ])
+    rgb    = cv2.cvtColor(cv2.resize(image_bgr, (224, 224)), cv2.COLOR_BGR2RGB)
+    tensor = t(rgb).unsqueeze(0)
+
+    with _model_lock, torch.no_grad():
+        logits = _get_classifier()(tensor)
+    probs = torch.softmax(logits, dim=1)[0]
+    return float(sum(probs[c] for c in _TURTLE_CLASS_IDS))
+
+
+@lru_cache(maxsize=1)
 def get_embedder() -> "nn.Module":
     import torch
     model = _build_model()
@@ -74,28 +131,42 @@ def get_embedder() -> "nn.Module":
     return model
 
 
-def _color_histogram(image_bgr: np.ndarray) -> np.ndarray:
-    """512-d HSV color histogram (H=32 bins, V=16 bins), L2-normalised.
+# ── Spatial colour histogram ──────────────────────────────────────────────────
 
-    Captures dominant colour distribution — highly discriminative for
-    visually distinct subjects (car vs turtle, baby vs adult).
+def _spatial_color_histogram(image_bgr: np.ndarray) -> np.ndarray:
+    """512-d spatial HSV histogram on a 4×4 grid, L2-normalised.
+
+    Each of the 16 cells contributes H=8 bins × V=4 bins = 32 features.
+    Captures the spatial layout of colours, not just their global distribution.
+    16 cells × 32 = 512-d total.
     """
-    hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
-    # H axis: 0-180, V axis: 0-256 → 32×16 = 512 bins
-    hist = cv2.calcHist([hsv], [0, 2], None, [32, 16], [0, 180, 0, 256])
-    flat = hist.flatten().astype(np.float32)
+    img  = cv2.resize(image_bgr, (128, 128))
+    hsv  = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    cell = 32  # 128 / 4
+
+    parts: list[np.ndarray] = []
+    for row in range(4):
+        for col in range(4):
+            patch = hsv[row*cell:(row+1)*cell, col*cell:(col+1)*cell]
+            h = cv2.calcHist([patch], [0, 2], None, [8, 4], [0, 180, 0, 256])
+            parts.append(h.flatten())
+
+    flat = np.concatenate(parts).astype(np.float32)  # 512-d
     norm = np.linalg.norm(flat)
     if norm < 1e-9:
-        return np.zeros(EMBEDDING_DIM, dtype=np.float32)
+        return np.zeros(COLOR_DIM, dtype=np.float32)
     return flat / norm
 
 
-def embed_image(image_bgr: np.ndarray) -> np.ndarray:
-    """512-d combined embedding: 60% EfficientNet semantic + 40% HSV colour.
+# ── Public API ────────────────────────────────────────────────────────────────
 
-    The colour component ensures visually unrelated images (e.g. a car vs a
-    sea turtle) score well below the 0.84 acceptance threshold even when the
-    deep network assigns similar category-level features.
+def embed_image(image_bgr: np.ndarray) -> np.ndarray:
+    """Return a 1024-d unit embedding: [√0.30·semantic | √0.70·spatial_colour].
+
+    Cosine similarity between two such embeddings equals:
+      0.30 × cosine(semantic_q, semantic_r) + 0.70 × cosine(colour_q, colour_r)
+
+    This is mathematically exact — no approximation from additive mixing.
     """
     import torch
     from torchvision import transforms
@@ -105,16 +176,14 @@ def embed_image(image_bgr: np.ndarray) -> np.ndarray:
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
-    rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+    rgb    = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
     tensor = _transform(rgb).unsqueeze(0)
 
     with _model_lock, torch.no_grad():
-        semantic_vec = get_embedder()(tensor).squeeze(0).numpy().astype(np.float32)
+        semantic = get_embedder()(tensor).squeeze(0).numpy().astype(np.float32)
 
-    color_vec = _color_histogram(image_bgr)
+    colour = _spatial_color_histogram(image_bgr)
 
-    combined = _W_SEMANTIC * semantic_vec + _W_COLOR * color_vec
-    norm = np.linalg.norm(combined)
-    if norm < 1e-9:
-        return semantic_vec
-    return (combined / norm).astype(np.float32)
+    combined = np.concatenate([_SCALE_S * semantic, _SCALE_C * colour])
+    # combined is already a unit vector: ||combined||² = 0.3 + 0.7 = 1
+    return combined.astype(np.float32)

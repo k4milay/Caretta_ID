@@ -68,5 +68,7 @@ class MatchResult(BaseModel):
 
 class IdentificationResponse(BaseModel):
     matches: list[MatchResult]
+    candidates: list[MatchResult] = []
     threshold: float
     accepted: bool
+    turtle_detected: bool = True  # False → fotoğrafta kaplumbağa tespit edilemedi

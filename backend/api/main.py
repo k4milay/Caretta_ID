@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from core.logging import configure_logging, get_logger
-from api.routes import health, identify, photos, sightings, turtles
+from api.routes import admin, health, identify, photos, sightings, turtles
 
 configure_logging()
 log = get_logger("api")
@@ -68,6 +68,7 @@ app.include_router(identify.router)
 app.include_router(turtles.router)
 app.include_router(photos.router)
 app.include_router(sightings.router)
+app.include_router(admin.router)
 
 # Yüklenen fotoğrafları statik dosya olarak sun
 _UPLOADS = Path("uploads")
