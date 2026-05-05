@@ -1,6 +1,0 @@
-.match-card { display: flex; flex-direction: column; gap: .5rem; }
-.match-rank { font-size: .75rem; color: var(--muted); font-weight: 700; }
-.match-name { font-size: 1.05rem; font-weight: 600; }
-.match-score { display: flex; align-items: center; gap: .5rem; }
-.score-bar-bg { flex: 1; height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; }
-.score-bar-fill { height: 100%; background: var(--teal); border-radius: 99px; transition: width .4s; }

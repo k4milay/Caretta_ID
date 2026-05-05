@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import threading
 from functools import lru_cache
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import cv2
@@ -44,8 +43,7 @@ EMBEDDING_DIM = SEMANTIC_DIM + COLOR_DIM  # 1024
 # 33=loggerhead (Caretta caretta!), 34=leatherback, 35=mud turtle, 36=terrapin, 37=box turtle
 _TURTLE_CLASS_IDS: frozenset[int] = frozenset([33, 34, 35, 36, 37])
 
-_WEIGHTS_PATH = Path("ml/models/efficientnet_head.pt")
-_model_lock   = threading.Lock()
+_model_lock = threading.Lock()
 
 # Cosine-decomposition weights: cos_total = W_S·cos_semantic + W_C·cos_colour
 # EfficientNet semantic knows "turtle" vs "person/trophy/car" — weight it higher.
@@ -60,28 +58,34 @@ _SCALE_C = float(np.sqrt(_W_C))  # ≈ 0.6325
 # ── Semantic encoder ──────────────────────────────────────────────────────────
 
 def _build_model() -> "nn.Module":
+    import torch
     import torch.nn as nn
     from torchvision.models import EfficientNet_B0_Weights, efficientnet_b0
 
     backbone = efficientnet_b0(weights=EfficientNet_B0_Weights.DEFAULT)
 
+    # Use the first SEMANTIC_DIM rows of the pretrained classifier as a fixed projection.
+    # This is fully deterministic across restarts — no random init, no saved weights needed.
+    # backbone.classifier[1] is Linear(1280, 1000) with ImageNet pretrained weights.
+    clf_weight = backbone.classifier[1].weight[:SEMANTIC_DIM].detach().clone()
+    clf_bias   = backbone.classifier[1].bias[:SEMANTIC_DIM].detach().clone()
+
     class EfficientNetEmbedder(nn.Module):
         def __init__(self) -> None:
             super().__init__()
-            self.features   = backbone.features
-            self.pool       = backbone.avgpool
-            self.projection = nn.Sequential(
-                nn.Flatten(),
-                nn.Linear(1280, SEMANTIC_DIM),
-                nn.BatchNorm1d(SEMANTIC_DIM),
-                nn.ReLU(inplace=True),
-            )
+            self.features = backbone.features
+            self.pool     = backbone.avgpool
+            self.proj     = nn.Linear(1280, SEMANTIC_DIM, bias=True)
+            with torch.no_grad():
+                self.proj.weight.copy_(clf_weight)
+                self.proj.bias.copy_(clf_bias)
 
         def forward(self, x):
             import torch.nn.functional as F
             x = self.features(x)
             x = self.pool(x)
-            x = self.projection(x)
+            x = torch.flatten(x, 1)
+            x = self.proj(x)
             return F.normalize(x, p=2, dim=1)
 
     return EfficientNetEmbedder()
@@ -122,11 +126,7 @@ def turtle_probability(image_bgr: np.ndarray) -> float:
 
 @lru_cache(maxsize=1)
 def get_embedder() -> "nn.Module":
-    import torch
     model = _build_model()
-    if _WEIGHTS_PATH.exists():
-        state = torch.load(_WEIGHTS_PATH, map_location="cpu", weights_only=True)
-        model.projection.load_state_dict(state)
     model.eval()
     return model
 
@@ -176,8 +176,9 @@ def embed_image(image_bgr: np.ndarray) -> np.ndarray:
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
-    rgb    = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-    tensor = _transform(rgb).unsqueeze(0)
+    resized = cv2.resize(image_bgr, (224, 224))
+    rgb     = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+    tensor  = _transform(rgb).unsqueeze(0)
 
     with _model_lock, torch.no_grad():
         semantic = get_embedder()(tensor).squeeze(0).numpy().astype(np.float32)
