@@ -670,66 +670,7 @@ Kullanıcı "Yeni Kayıt" butonuna tıklar
 
 ---
 
-## 9. Kritik Teknik Çözümler
-
-### 9.1 pgvector Tip Uyuşmazlığı
-
-asyncpg, Python listesini `vector` tipine dönüştüremiyordu:
-
-```
-DataError: invalid input for query argument $1: [...] (expected str, got list)
-```
-
-**Çözüm:** Vektörü SQL literal string olarak formatla:
-
-```python
-# Hatalı
-await session.execute(text("UPDATE photos SET embedding = :vec WHERE id = :id"),
-                      {"vec": embedding.tolist(), "id": str(photo_id)})  # ← tip hatası
-
-# Doğru — backend/repositories/photo_repository.py
-vec_literal = f"'[{','.join(str(x) for x in embedding.tolist())}]'"
-await session.execute(
-    text(f"UPDATE photos SET embedding = {vec_literal}::vector WHERE id = :id"),
-    {"id": str(photo_id)},
-)
-```
-
-### 9.2 Docker İmaj Boyutu
-
-`torch==2.4.1` pip'ten kurulunca CUDA kütüphaneleri (~3 GB) de indiriliyordu.
-
-**Çözüm:** CPU-only PyTorch'u ayrı index'ten önce kur:
-
-```dockerfile
-# backend/Dockerfile
-RUN pip install --no-cache-dir \
-        --index-url https://download.pytorch.org/whl/cpu \
-        torch==2.4.1+cpu torchvision==0.19.1+cpu && \
-    grep -v "^torch" requirements.txt | grep -v "^torchvision" > /tmp/req_notorch.txt && \
-    pip install --no-cache-dir -r /tmp/req_notorch.txt
-```
-
-**Sonuç:** İmaj boyutu ~3 GB'tan ~1.2 GB'a düştü.
-
-### 9.3 lru_cache Singleton ve Test İzolasyonu
-
-`lru_cache` ile sarılmış ajan singletonları `dependency_overrides` ile geçersiz kılınamıyordu.
-
-**Çözüm:** Orchestrator ve ProfileAgent fabrikalarının kendisini override ederek bağımlılıkları doğrudan enjekte etmek:
-
-```python
-# Test konfig
-app.dependency_overrides[get_orchestrator] = lambda: OrchestratorAgent(
-    preprocessing=ImagePreprocessingAgent(strategy=MockStrategy()),
-    feature_extraction=FeatureExtractionAgent(embed_fn=fake_embed),
-    similarity_search=SimilaritySearchAgent(mock_photo_repo, mock_turtle_repo),
-)
-```
-
----
-
-## 10. Test Yapısı
+## 9. Test Yapısı
 
 | Test Dosyası | Tür | Test Sayısı | Kapsanan Alan |
 |---|---|---|---|
@@ -763,7 +704,7 @@ app.dependency_overrides[get_orchestrator] = lambda: OrchestratorAgent(
 
 ---
 
-## 11. Kod İstatistikleri
+## 10. Kod İstatistikleri
 
 | Metrik | Değer |
 |--------|-------|
@@ -781,7 +722,7 @@ app.dependency_overrides[get_orchestrator] = lambda: OrchestratorAgent(
 
 ---
 
-## 12. Gelecek Geliştirmeler
+## 11. Gelecek Geliştirmeler
 
 | Öncelik | Geliştirme | Gerekçe |
 |---------|-----------|---------|
@@ -800,7 +741,7 @@ python ml/training/train_arcface.py --dataset_dir data/SeaTurtleID2022/
 
 ---
 
-## 13. Özet
+## 12. Özet
 
 | Prensip / Desen | Nerede Uygulandı | Sınıf / Dosya |
 |-----------------|-----------------|---------------|
